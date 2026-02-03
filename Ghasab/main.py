@@ -1,50 +1,147 @@
 import flet as ft
-import sys
-import traceback
 import os
+import threading
+import yt_dlp
+import re
+import traceback
+import sys
 
-# نضع الاستيرادات الثقيلة داخل دالة main لنمنع انهيار التطبيق عند التشغيل
+# ---------- وظائف مساعدة ----------
+def find_cookie_files():
+    # محاولة إيجاد الكوكيز في مسارات الأندرويد الشائعة
+    candidates = ["/storage/emulated/0/Download", "/sdcard/Download", os.path.expanduser("~/downloads")]
+    out = []
+    for path in candidates:
+        try:
+            if os.path.isdir(path):
+                for f in os.listdir(path):
+                    if ("cookie" in f.lower()) and f.endswith((".txt", ".json")):
+                        out.append(os.path.join(path, f))
+        except: pass
+    return sorted(list(set(out)))
+
 def main(page: ft.Page):
     # إعدادات الصفحة الأساسية
-    page.title = "Ghasab Diagnostic"
+    page.title = "تحميل غصب PRO"
     page.theme_mode = ft.ThemeMode.DARK
+    page.rtl = True
+    page.padding = 15
     page.scroll = ft.ScrollMode.AUTO
-    
-    # حاوية لعرض الأخطاء
-    log_output = ft.Column(spacing=10)
-    page.add(ft.Text("Diagnostic Console", size=20, weight="bold"), log_output)
 
-    def log_to_screen(message, color=ft.Colors.WHITE):
-        log_output.controls.append(ft.Text(message, color=color, size=12))
+    # حاوية للتشخيص (تظهر في حال وجود خطأ فقط)
+    diag_container = ft.Column(visible=True)
+    page.add(diag_container)
+
+    def diag_log(msg, color=ft.Colors.WHITE):
+        diag_container.controls.append(ft.Text(msg, color=color, size=12))
         page.update()
 
     try:
-        log_to_screen("1. Starting Python Environment...")
-        log_to_screen(f"Python Version: {sys.version}")
+        diag_log("🚀 جاري فحص المحرك...")
         
-        log_to_screen("2. Requesting Storage Permission...")
-        page.request_permission(ft.PermissionType.STORAGE)
-        
-        log_to_screen("3. Attempting to import yt-dlp...")
+        # طلب الصلاحيات بطريقة آمنة (تتجنب الانهيار اللي صار معك)
         try:
-            import yt_dlp
-            log_to_screen("✅ yt-dlp imported successfully!", ft.Colors.GREEN)
-        except ImportError as e:
-            log_to_screen(f"❌ yt-dlp import failed: {str(e)}", ft.Colors.RED)
-            return
+            if hasattr(page, "request_permission"):
+                page.request_permission(ft.PermissionType.STORAGE)
+                diag_log("✅ تم إرسال طلب الصلاحيات")
+            else:
+                diag_log("ℹ️ تجاوز طلب الصلاحية اليدوي (سيتم الاعتماد على إعدادات الـ APK)")
+        except:
+            diag_log("⚠️ الصلاحيات البرمجية غير مدعومة حالياً")
 
-        # إذا وصلنا هنا، يعني المحرك سليم، نبدأ ببناء الواجهة الحقيقية
-        log_to_screen("4. Building UI components...")
-        
-        # (ضع هنا بقية كود الواجهة الخاص بك، لكن تأكد أن الاستيرادات داخل main أو محمية بـ try)
-        from Ghasab.main_real import build_real_ui # مثال إذا فصلت الكود
-        log_to_screen("✅ UI Ready!", ft.Colors.BLUE)
+        # فحص مكتبة yt-dlp
+        import yt_dlp
+        diag_log("✅ مكتبة التحميل جاهزة", ft.Colors.GREEN)
+
+        # ---------- بناء واجهة التطبيق الحقيقية ----------
+        default_path = "/storage/emulated/0/Download/GhasabApp"
+        # إذا لم يجد ذاكرة الجوال (كما في المحاكيات)، يستخدم مجلد التطبيق
+        if not os.path.exists("/storage/emulated/0"):
+             default_path = os.path.join(os.getcwd(), "downloads")
+
+        state = {"path": default_path}
+
+        # عناصر الواجهة
+        url_input = ft.TextField(label="روابط الفيديو", multiline=True, min_lines=1, max_lines=3, border_radius=12, hint_text="ضع الروابط هنا...")
+        path_input = ft.TextField(label="مسار الحفظ", value=state["path"], border_radius=10, expand=True)
+        video_thumbnail = ft.Image(src="https://flet.dev/img/pages/quickstart/flet-app-icons.png", width=300, height=180, fit="contain", border_radius=10, visible=False)
+        cookies_dropdown = ft.Dropdown(label="ملف الكوكيز (اختياري)", options=[ft.dropdown.Option(key=f, text=os.path.basename(f)) for f in find_cookie_files()], expand=True)
+        progress_bar = ft.ProgressBar(value=0, expand=True, color=ft.Colors.BLUE_400)
+        progress_text = ft.Text("التقدم: 0%", size=12)
+        log_list = ft.ListView(expand=True, spacing=5, auto_scroll=True)
+        status_text = ft.Text("جاهز للتحميل", weight="bold")
+
+        def append_log(msg):
+            log_list.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREY_300))
+            page.update()
+
+        def update_progress(d):
+            if d['status'] == 'downloading':
+                try:
+                    p_raw = d.get('_percent_str', '0%').replace('%','').strip()
+                    progress_bar.value = float(p_raw) / 100
+                    progress_text.value = f"جاري التحميل: {p_raw}%"
+                    page.update()
+                except: pass
+
+        def start_download(e):
+            urls = [u.strip() for u in url_input.value.split('\n') if u.strip()]
+            if not urls:
+                page.snack_bar = ft.SnackBar(ft.Text("❌ ضع رابطاً أولاً"))
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            mode = e.control.data 
+            cookie_file = cookies_dropdown.value
+            
+            def dl_thread():
+                try:
+                    save_path = state["path"]
+                    os.makedirs(save_path, exist_ok=True)
+                    for url in urls:
+                        append_log(f"🔍 فحص: {url}")
+                        opts = {
+                            'outtmpl': f"{save_path}/%(title)s.%(ext)s",
+                            'progress_hooks': [update_progress],
+                            'cookiefile': cookie_file,
+                        }
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            ydl.download([url])
+                        append_log(f"✅ تم بنجاح")
+                except Exception as ex:
+                    append_log(f"❌ خطأ: {str(ex)[:50]}")
+                page.update()
+
+            threading.Thread(target=dl_thread, daemon=True).start()
+
+        # تجميع الواجهة الحقيقية
+        main_ui = ft.Container(
+            padding=10,
+            content=ft.Column([
+                ft.Text("تحميل غصب PRO", size=26, weight="bold", color=ft.Colors.BLUE_400),
+                ft.Row([video_thumbnail], alignment="center"),
+                url_input,
+                ft.Row([path_input, ft.IconButton(ft.Icons.SAVE)]),
+                cookies_dropdown,
+                ft.Row([
+                    ft.FilledButton("فيديو", data="video", icon=ft.Icons.DOWNLOAD, on_click=start_download, expand=True),
+                    ft.FilledButton("صوت", data="audio", icon=ft.Icons.MUSIC_NOTE, on_click=start_download, expand=True, bgcolor=ft.Colors.GREEN_800),
+                ]),
+                ft.Divider(height=10),
+                status_text, progress_bar, progress_text,
+                ft.Container(content=log_list, height=150, bgcolor=ft.Colors.BLACK_26, padding=10, border_radius=12)
+            ], horizontal_alignment="center")
+        )
+
+        # إذا نجح كل شيء، نخفي التشخيص ونظهر التطبيق
+        diag_container.visible = False
+        page.add(main_ui)
+        page.update()
 
     except Exception as e:
-        # التقاط أي خطأ يسبب الشاشة السوداء وعرضه
-        error_details = traceback.format_exc()
-        log_to_screen("‼️ CRITICAL CRASH ‼️", ft.Colors.RED)
-        log_to_screen(error_details, ft.Colors.RED_200)
+        diag_log("‼️ خطأ في تشغيل التطبيق ‼️", ft.Colors.RED)
+        diag_log(traceback.format_exc(), ft.Colors.RED_200)
 
 if __name__ == "__main__":
     ft.app(target=main)
