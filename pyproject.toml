@@ -9,7 +9,7 @@ authors = [
 ]
 # ✅ هنا نضيف المكتبات التي يحتاجها التطبيق ليعمل داخل الجوال
 dependencies = [
-    "flet>=0.80.1",
+    "flet",
     "yt-dlp"
 ]
 
@@ -40,4 +40,5 @@ permissions = [
     "MANAGE_EXTERNAL_STORAGE"
 ]
 # لضمان استقرار البناء، نحدد اسم الحزمة
+
 package_name = "com.mycompany.ghasab"
