@@ -1,44 +1,22 @@
 [project]
 name = "ghasab"
 version = "0.1.0"
-description = "تطبيق تحميل غصب PRO"
-readme = "README.md"
-requires-python = ">=3.10"
-authors = [
-    { name = "Flet developer", email = "you@example.com" }
-]
-# ✅ هنا نضيف المكتبات التي يحتاجها التطبيق ليعمل داخل الجوال
 dependencies = [
-    "flet",
-    "yt-dlp"
+    "flet>=0.25.0",
+    "yt-dlp",
+    "android-notify",
+    "pyjnius"
 ]
-
-[dependency-groups]
-dev = [
-    "flet[all]>=0.80.1",
-]
-
-[tool.flet]
-org = "com.mycompany"
-product = "ghasab"
-company = "Flet"
-copyright = "Copyright (C) 2026 by Flet"
 
 [tool.flet.app]
 path = "Ghasab"
 
-# ✅ هذا القسم هو الأهم لتشغيل التطبيق على أندرويد
 [tool.flet.android]
-# تحديد إصدارات مستقرة بدلاً من الإصدار 36
 build_sdk_version = 34
 target_sdk_version = 34
-
 permissions = [
     "INTERNET",
     "WRITE_EXTERNAL_STORAGE",
     "READ_EXTERNAL_STORAGE",
     "MANAGE_EXTERNAL_STORAGE"
 ]
-# لضمان استقرار البناء، نحدد اسم الحزمة
-
-package_name = "com.mycompany.ghasab"
