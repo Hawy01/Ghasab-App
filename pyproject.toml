@@ -10,11 +10,12 @@ dependencies = [
 path = "Ghasab"
 
 [tool.flet.android]
+# أندرويد 10 يعمل بامتياز مع هذه الإعدادات
 build_sdk_version = 34
 target_sdk_version = 34
 permissions = [
     "INTERNET",
     "WRITE_EXTERNAL_STORAGE",
-    "READ_EXTERNAL_STORAGE",
-    "MANAGE_EXTERNAL_STORAGE"
+    "READ_EXTERNAL_STORAGE"
 ]
+ 
