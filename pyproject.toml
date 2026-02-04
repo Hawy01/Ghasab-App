@@ -2,10 +2,8 @@
 name = "ghasab"
 version = "0.1.0"
 dependencies = [
-    "flet>=0.25.0",
-    "yt-dlp",
-    "android-notify",
-    "pyjnius"
+    "flet",
+    "yt-dlp"
 ]
 
 [tool.flet.app]
