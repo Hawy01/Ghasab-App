@@ -1,113 +1,38 @@
 import flet as ft
-import os
-import threading
-import yt_dlp
-import traceback
+import sys
 
-# دالة البحث عن الكوكيز في مجلد التنزيلات
-def find_cookie_files():
-    paths = ["/storage/emulated/0/Download", "/sdcard/Download"]
-    cookie_files = []
-    for p in paths:
-        try:
-            if os.path.exists(p):
-                for f in os.listdir(p):
-                    if "cookie" in f.lower() and f.endswith((".txt", ".json")):
-                        cookie_files.append(os.path.join(p, f))
-        except: pass
-    return sorted(list(set(cookie_files)))
-
+# ملاحظة: وضعنا الاستيرادات داخل دالة مح محمية لضمان عدم الانهيار عند بدء التشغيل
 def main(page: ft.Page):
-    page.title = "تحميل غصب PRO"
+    page.title = "Ghasab Safe Mode"
     page.theme_mode = ft.ThemeMode.DARK
-    page.rtl = True
-    page.padding = 20
-    page.scroll = ft.ScrollMode.AUTO
+    page.vertical_alignment = ft.MainAxisAlignment.CENTER
+    
+    status_text = ft.Text("جاري فحص النظام...", size=20)
+    error_text = ft.Text("", color=ft.colors.RED_400, size=12)
+    page.add(status_text, error_text)
 
-    save_dir = "/storage/emulated/0/Download/GhasabApp"
-    
-    # واجهة المستخدم
-    url_input = ft.TextField(label="روابط الفيديو", multiline=True, border_radius=12, prefix_icon=ft.icons.LINK)
-    path_input = ft.TextField(label="مسار الحفظ", value=save_dir, expand=True, prefix_icon=ft.icons.FOLDER)
-    
-    cookies_list = find_cookie_files()
-    cookies_dropdown = ft.Dropdown(
-        label="ملف الكوكيز (تلقائي)",
-        prefix_icon=ft.icons.COOKIE,
-        expand=True,
-        options=[ft.dropdown.Option(key=f, text=os.path.basename(f)) for f in cookies_list]
-    )
-    
-    progress_bar = ft.ProgressBar(value=0, expand=True, color=ft.colors.BLUE_400)
-    progress_text = ft.Text("التقدم: 0%", size=12)
-    log_list = ft.ListView(expand=True, spacing=5, height=200)
-
-    def append_log(msg, is_error=False):
-        log_list.controls.append(ft.Text(msg, size=11, color=ft.colors.RED_400 if is_error else ft.colors.GREY_300))
+    try:
+        # 1. فحص نسخة بايثون في الجوال
+        status_text.value = f"بايثون يعمل: {sys.version[:10]}"
         page.update()
 
-    def update_progress(d):
-        if d['status'] == 'downloading':
-            try:
-                p_raw = d.get('_percent_str', '0%').replace('%','').strip()
-                progress_bar.value = float(p_raw) / 100
-                progress_text.value = f"جاري التحميل بأعلى جودة: {p_raw}%"
-                page.update()
-            except: pass
+        # 2. محاولة استيراد المكتبات الثقيلة داخل الدالة
+        try:
+            import yt_dlp
+            status_text.value = "✅ المحرك سليم والمكتبات محملة"
+            status_text.color = ft.colors.GREEN_400
+        except ImportError as e:
+            status_text.value = "❌ مكتبة yt-dlp مفقودة"
+            error_text.value = str(e)
+            
+        # 3. عرض زر بسيط للتأكد من الواجهة
+        page.add(ft.ElevatedButton("تشغيل الواجهة الحقيقية", on_click=lambda _: print("OK")))
 
-    def start_download(e):
-        urls = [u.strip() for u in url_input.value.split('\n') if u.strip()]
-        if not urls: return
-        
-        mode = e.control.data 
-        selected_cookie = cookies_dropdown.value
-        
-        def dl_thread():
-            try:
-                if not os.path.exists(save_dir):
-                    os.makedirs(save_dir, exist_ok=True)
-                
-                for url in urls:
-                    append_log(f"🚀 جاري الفحص والتحميل...")
-                    opts = {
-                        'outtmpl': f"{save_dir}/%(title)s.%(ext)s",
-                        'progress_hooks': [update_progress],
-                        'cookiefile': selected_cookie,
-                        # طلب أفضل ملف فيديو وصوت مدمجين (لتجنب الحاجة لبرامج دمج خارجية)
-                        'format': 'best' if mode == 'video' else 'bestaudio/best', 
-                    }
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        ydl.download([url])
-                
-                append_log("✅ تم التحميل بنجاح في مجلد GhasabApp")
-                page.snack_bar = ft.SnackBar(ft.Text("✅ اكتمل التحميل بنجاح!"))
-                page.snack_bar.open = True
-            except Exception as ex:
-                append_log(f"❌ خطأ: {str(ex)[:100]}", True)
-            page.update()
-
-        threading.Thread(target=dl_thread, daemon=True).start()
-
-    # محاولة طلب الصلاحيات بشكل آمن
-    try:
-        if hasattr(page, "request_permission"):
-            page.request_permission(ft.PermissionType.STORAGE)
-    except: pass
-
-    page.add(
-        ft.Column([
-            ft.Text("تحميل غصب PRO", size=28, weight="bold", color=ft.colors.BLUE_400),
-            url_input,
-            ft.Row([path_input]),
-            ft.Row([cookies_dropdown]),
-            ft.Row([
-                ft.ElevatedButton("تحميل فيديو", icon=ft.icons.VIDEO_LIBRARY, data="video", on_click=start_download, expand=True),
-                ft.ElevatedButton("صوت فقط", icon=ft.icons.AUDIO_FILE, data="audio", on_click=start_download, expand=True, bgcolor=ft.colors.GREEN_800),
-            ]),
-            progress_text, progress_bar,
-            ft.Container(content=log_list, bgcolor=ft.colors.BLACK_26, padding=10, border_radius=12)
-        ], horizontal_alignment="center")
-    )
+    except Exception as e:
+        status_text.value = "‼️ خطأ فادح في النظام"
+        error_text.value = str(e)
+    
+    page.update()
 
 if __name__ == "__main__":
     ft.app(target=main)
